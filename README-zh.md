@@ -1,5 +1,10 @@
 # 北极星：服务发现和治理
 
+[![Build Status](https://github.com/polarismesh/polaris/actions/workflows/testing.yml/badge.svg)](https://github.com/PolarisMesh/polaris/actions/workflows/testing.yml)
+[![codecov.io](https://codecov.io/gh/polarismesh/polaris/branch/main/graph/badge.svg)](https://codecov.io/gh/polarismesh/polaris?branch=main)
+[![Contributors](https://img.shields.io/github/contributors/polarismesh/polaris)](https://github.com/polarismesh/polaris/graphs/contributors)
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+
 <img src="logo.svg" width="10%" height="10%" />
 
 [English](./README.md) | 简体中文
@@ -79,7 +84,7 @@ README：
 
 #### 准备golang编译环境
 
-北极星服务端编译需要golang编译环境，版本号要求>=1.12，可以在这里进行下载：https://golang.org/dl/#featured
+北极星服务端编译需要golang编译环境，版本号要求>=1.17，可以在这里进行下载：https://golang.org/dl/#featured
 
 ### 编译构建
 
@@ -161,15 +166,8 @@ curl http://127.0.0.1:8090
 
 <img src="https://main.qcloudimg.com/raw/bff4285d70498058caa212805b83a620.jpg" width="30%" height="30%" />
 
-欢迎扫码关注官方账号，北极星相关课程的文章和视频，都会在微信公众号发布，同时我们也将为大家分享最新的实践案例和PolarisMesh的更新动态。
-
-<img src="https://main.qcloudimg.com/raw/e5a51696ae7c01e8bc9097fa0c7e426d.png" width="30%" height="30%" />
-
 ## 参与贡献
 
 如果你有好的意见或建议，欢迎给我们提 Issues 或 Pull Requests，为提升北极星的开发体验贡献力量。
 
 详见：[CONTRIBUTING.md](CONTRIBUTING.md)
-
-[腾讯开源激励计划](https://opensource.tencent.com/contribution) 鼓励开发者的参与和贡献，期待你的加入。
-

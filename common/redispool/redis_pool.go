@@ -19,7 +19,6 @@ package redispool
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -29,7 +28,6 @@ import (
 	"github.com/go-redis/redis/v8"
 
 	"github.com/polarismesh/polaris-server/common/log"
-	commontime "github.com/polarismesh/polaris-server/common/time"
 	"github.com/polarismesh/polaris-server/plugin"
 )
 
@@ -91,89 +89,50 @@ type Resp struct {
 	shouldRetry bool
 }
 
-// Config redis pool configuration
-type Config struct {
-	KvAddr         string              `json:"kvAddr"`
-	KvPasswd       string              `json:"kvPasswd"`
-	MaxIdle        int                 `json:"maxIdle"`
-	IdleTimeout    commontime.Duration `json:"idleTimeout"`
-	ConnectTimeout commontime.Duration `json:"connectTimeout"`
-	MsgTimeout     commontime.Duration `json:"msgTimeout"`
-	Concurrency    int                 `json:"concurrency"`
-	Compatible     bool                `json:"compatible"`
-	MaxRetry       int                 `json:"maxRetry"`
-	MinBatchCount  int                 `json:"minBatchCount"`
-	WaitTime       commontime.Duration `json:"waitTime"`
-}
-
-// DefaultConfig redis pool configuration with default values
-func DefaultConfig() *Config {
-	return &Config{
-		MaxIdle:        200,
-		IdleTimeout:    commontime.Duration(120 * time.Second),
-		ConnectTimeout: commontime.Duration(300 * time.Millisecond),
-		MsgTimeout:     commontime.Duration(300 * time.Millisecond),
-		Concurrency:    200,
-		Compatible:     false,
-		MaxRetry:       2,
-		MinBatchCount:  10,
-		WaitTime:       commontime.Duration(50 * time.Millisecond),
-	}
-}
-
-// Validate validate config params
-func (c *Config) Validate() error {
-	if len(c.KvAddr) == 0 {
-		return errors.New("kvAddr is empty")
-	}
-	if len(c.KvPasswd) == 0 {
-		return errors.New("KvPasswd is empty")
-	}
-	if c.MaxIdle <= 0 {
-		return errors.New("maxIdle is empty")
-	}
-	if c.IdleTimeout == 0 {
-		return errors.New("idleTimeout is empty")
-	}
-	if c.ConnectTimeout == 0 {
-		return errors.New("connectTimeout is empty")
-	}
-	if c.MsgTimeout == 0 {
-		return errors.New("msgTimeout is empty")
-	}
-	if c.Concurrency <= 0 {
-		return errors.New("concurrency is empty")
-	}
-	if c.MaxRetry < 0 {
-		return errors.New("maxRetry is empty")
-	}
-	return nil
-}
-
 // Pool ckv连接池结构体
 type Pool struct {
 	config         *Config
 	ctx            context.Context
-	redisClient    *redis.Client
+	redisClient    redis.UniversalClient
 	redisDead      uint32
 	recoverTimeSec int64
 	statis         plugin.Statis
 	taskChans      []chan *Task
 }
 
+// NewRedisClient new redis client
+func NewRedisClient(config *Config, opts ...Option) redis.UniversalClient {
+	if config == nil {
+		config = DefaultConfig()
+	}
+	for _, o := range opts {
+		o(config)
+	}
+	var redisClient redis.UniversalClient
+	switch config.DeployMode {
+	case redisSentinel:
+		redisClient = redis.NewFailoverClient(config.FailOverOptions())
+	case redisCluster:
+		redisClient = redis.NewClusterClient(config.ClusterOptions())
+	case redisStandalone:
+		redisClient = redis.NewClient(config.StandaloneOptions())
+	default:
+		redisClient = redis.NewClient(config.StandaloneOptions())
+	}
+	return redisClient
+}
+
 // NewPool init a redis connection pool instance
-func NewPool(ctx context.Context, config *Config, statis plugin.Statis) *Pool {
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:         config.KvAddr,
-		Password:     config.KvPasswd,
-		MaxRetries:   -1,
-		DialTimeout:  time.Duration(config.ConnectTimeout),
-		ReadTimeout:  time.Duration(config.MsgTimeout),
-		WriteTimeout: time.Duration(config.MsgTimeout),
-		PoolSize:     config.MaxIdle,
-		MinIdleConns: config.MaxIdle,
-		IdleTimeout:  time.Duration(config.IdleTimeout),
-	})
+func NewPool(ctx context.Context, config *Config, statis plugin.Statis, opts ...Option) *Pool {
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = config.MsgTimeout
+	}
+
+	if config.ReadTimeout == 0 {
+		config.ReadTimeout = config.MsgTimeout
+	}
+
+	redisClient := NewRedisClient(config, opts...)
 	pool := &Pool{
 		config:         config,
 		ctx:            ctx,
@@ -182,6 +141,7 @@ func NewPool(ctx context.Context, config *Config, statis plugin.Statis) *Pool {
 		statis:         statis,
 		taskChans:      make([]chan *Task, 0, config.Concurrency),
 	}
+
 	for i := 0; i < config.Concurrency; i++ {
 		pool.taskChans = append(pool.taskChans, make(chan *Task, 1024))
 	}
@@ -283,7 +243,7 @@ func (p *Pool) startWorkers(wg *sync.WaitGroup) {
 
 func (p *Pool) process(wg *sync.WaitGroup, idx int) {
 	log.Infof("[RedisPool]redis worker %d started", idx)
-	ticker := time.NewTicker(time.Duration(p.config.WaitTime))
+	ticker := time.NewTicker(p.config.WaitTime)
 	piper := p.redisClient.Pipeline()
 	defer func() {
 		ticker.Stop()

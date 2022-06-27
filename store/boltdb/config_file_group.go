@@ -27,7 +27,6 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/polarismesh/polaris-server/common/model"
-	"github.com/polarismesh/polaris-server/common/utils"
 	"github.com/polarismesh/polaris-server/store"
 	"go.uber.org/zap"
 )
@@ -182,14 +181,8 @@ func (fg *configFileGroupStore) QueryConfigFileGroups(namespace, name string, of
 			}
 
 			if hasName {
-				if utils.IsWildName(name) {
-					if !strings.Contains(saveName, name[:len(name)-1]) {
-						return false
-					}
-				} else {
-					if saveName != name {
-						return false
-					}
+				if !strings.Contains(saveName, name[:len(name)-1]) {
+					return false
 				}
 			}
 
@@ -211,7 +204,13 @@ func (fg *configFileGroupStore) DeleteConfigFileGroup(namespace, name string) er
 	}
 
 	key := fmt.Sprintf("%s@@%s", namespace, name)
-	if err := fg.handler.DeleteValues(tblConfigFileGroup, []string{key}, true); err != nil {
+
+
+	properties := make(map[string]interface{})
+	properties[FileGroupFieldValid] = false
+	properties[FileGroupFieldModifyTime] = time.Now()
+
+	if err := fg.handler.UpdateValue(tblConfigFileGroup, key, properties); err != nil {
 		log.Error("[ConfigFileGroup] do delete", zap.Error(err))
 		return err
 	}

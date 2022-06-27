@@ -123,64 +123,54 @@ func (s *Server) CreateInstance(ctx context.Context, req *api.Instance) *api.Res
 	return api.NewInstanceResponse(api.ExecuteSuccess, out)
 }
 
-// store operate
+// createInstance store operate
 func (s *Server) createInstance(ctx context.Context, req *api.Instance, ins *api.Instance) (
 	*model.Instance, *api.Response) {
 
 	// create service if absent
-	code, err := s.createServiceIfAbsent(ctx, req)
+	code, svcId, err := s.createServiceIfAbsent(ctx, req)
 
 	if err != nil {
 		return nil, api.NewInstanceResponse(code, req)
 	}
 
 	if namingServer.bc == nil || !namingServer.bc.CreateInstanceOpen() {
-		return s.serialCreateInstance(ctx, req, ins) // 单个同步
+		return s.serialCreateInstance(ctx, svcId, req, ins) // 单个同步
 	}
-	return s.asyncCreateInstance(ctx, req, ins) // 批量异步
+	return s.asyncCreateInstance(ctx, svcId, req, ins) // 批量异步
 }
 
-// 异步新建实例
+// asyncCreateInstance 异步新建实例
 // 底层函数会合并create请求，增加并发创建的吞吐
 // req 原始请求
 // ins 包含了req数据与instanceID，serviceToken
-func (s *Server) asyncCreateInstance(ctx context.Context, req *api.Instance, ins *api.Instance) (
+func (s *Server) asyncCreateInstance(ctx context.Context, svcId string, req *api.Instance, ins *api.Instance) (
 	*model.Instance, *api.Response) {
-	rid := ParseRequestID(ctx)
-	pid := ParsePlatformID(ctx)
-	future := s.bc.AsyncCreateInstance(ins, ParsePlatformID(ctx), ParsePlatformToken(ctx))
+
+	allowAsyncRegis, _ := ctx.Value(utils.ContextOpenAsyncRegis).(bool)
+	future := s.bc.AsyncCreateInstance(svcId, ins, !allowAsyncRegis)
+
 	if err := future.Wait(); err != nil {
-		log.Error(err.Error(), ZapRequestID(rid), ZapPlatformID(pid))
 		if future.Code() == api.ExistedResource {
 			req.Id = utils.NewStringValue(ins.GetId().GetValue())
 		}
 		return nil, api.NewInstanceResponse(future.Code(), req)
 	}
 
-	return future.Instance(), nil
+	return utils.CreateInstanceModel(svcId, req), nil
 }
 
 // 同步串行创建实例
 // req为原始的请求体
 // ins包括了req的内容，并且填充了instanceID与serviceToken
-func (s *Server) serialCreateInstance(ctx context.Context, req *api.Instance, ins *api.Instance) (
+func (s *Server) serialCreateInstance(ctx context.Context, svcId string, req *api.Instance, ins *api.Instance) (
 	*model.Instance, *api.Response) {
 	rid := ParseRequestID(ctx)
 	pid := ParsePlatformID(ctx)
 
-	// 鉴权，这里拿的源服务的，如果是别名，service=nil
-	service, err := s.storage.GetSourceServiceToken(req.GetService().GetValue(), req.GetNamespace().GetValue())
-	if err != nil {
-		log.Error(err.Error(), ZapRequestID(rid), ZapPlatformID(pid))
-		return nil, api.NewInstanceResponse(api.StoreLayerException, req)
-	}
-	if service == nil {
-		return nil, api.NewInstanceResponse(api.NotFoundResource, req)
-	}
-
 	instance, err := s.storage.GetInstance(ins.GetId().GetValue())
 	if err != nil {
-		log.Error(err.Error(), ZapRequestID(rid), ZapPlatformID(pid))
+		log.Error("[Instance] get instance from store", ZapRequestID(rid), ZapPlatformID(pid), zap.Error(err))
 		return nil, api.NewInstanceResponse(api.StoreLayerException, req)
 	}
 	// 如果存在，则替换实例的属性数据，但是需要保留用户设置的隔离状态，以免出现关键状态丢失
@@ -188,7 +178,7 @@ func (s *Server) serialCreateInstance(ctx context.Context, req *api.Instance, in
 		ins.Isolate = instance.Proto.Isolate
 	}
 	// 直接同步创建服务实例
-	data := utils.CreateInstanceModel(service.ID, ins)
+	data := utils.CreateInstanceModel(svcId, ins)
 	if err := s.storage.AddInstance(data); err != nil {
 		log.Error(err.Error(), ZapRequestID(rid), ZapPlatformID(pid))
 		return nil, wrapperInstanceStoreResponse(req, err)
@@ -286,7 +276,8 @@ func (s *Server) asyncDeleteInstance(ctx context.Context, req *api.Instance, ins
 	start := time.Now()
 	rid := ParseRequestID(ctx)
 	pid := ParsePlatformID(ctx)
-	future := s.bc.AsyncDeleteInstance(ins, ParsePlatformID(ctx), ParsePlatformToken(ctx))
+
+	future := s.bc.AsyncDeleteInstance(ins)
 	if err := future.Wait(); err != nil {
 		// 如果发现不存在资源，意味着实例已经被删除，直接返回成功
 		if future.Code() == api.NotFoundResource {
@@ -837,12 +828,17 @@ func (s *Server) sendDiscoverEvent(eventType model.DiscoverEventType, namespace,
 	s.PublishDiscoverEvent(event)
 }
 
-// createServiceIfAbsent
-func (s *Server) createServiceIfAbsent(ctx context.Context, instance *api.Instance) (uint32, error) {
+// createServiceIfAbsent 如果服务不存在，则进行创建，并返回服务的ID信息
+func (s *Server) createServiceIfAbsent(ctx context.Context, instance *api.Instance) (uint32, string, error) {
 
-	if svc := s.caches.Service().GetServiceByName(instance.GetService().GetValue(), instance.GetNamespace().GetValue()); svc != nil {
-		return api.ExecuteSuccess, nil
+	svc, err := s.loadService(instance)
+	if err != nil {
+		return api.ExecuteException, "", err
 	}
+	if svc != nil {
+		return api.ExecuteSuccess, svc.ID, nil
+	}
+
 	simpleService := &api.Service{
 		Name:      utils.NewStringValue(instance.GetService().GetValue()),
 		Namespace: utils.NewStringValue(instance.GetNamespace().GetValue()),
@@ -870,10 +866,36 @@ func (s *Server) createServiceIfAbsent(ctx context.Context, instance *api.Instan
 	retCode := resp.GetCode().GetValue()
 
 	if retCode != api.ExecuteSuccess && retCode != api.ExistedResource {
-		return retCode, errors.New(resp.GetInfo().GetValue())
+		return retCode, "", errors.New(resp.GetInfo().GetValue())
 	}
 
-	return retCode, nil
+	svcId := resp.Service.Id.GetValue()
+
+	return retCode, svcId, nil
+}
+
+func (s *Server) loadService(instance *api.Instance) (*model.Service, error) {
+
+	svc := s.caches.Service().GetServiceByName(instance.GetService().GetValue(), instance.GetNamespace().GetValue())
+
+	if svc != nil {
+		if svc.IsAlias() {
+			return nil, errors.New("service is alias")
+		}
+		return svc, nil
+	}
+
+	// 再走数据库查询一遍
+	svc, err := s.storage.GetService(instance.GetService().GetValue(), instance.GetNamespace().GetValue())
+	if err != nil {
+		return nil, err
+	}
+
+	if svc != nil && svc.IsAlias() {
+		return nil, errors.New("service is alias")
+	}
+
+	return svc, nil
 }
 
 /*

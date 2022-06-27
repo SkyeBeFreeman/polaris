@@ -236,7 +236,11 @@ func (ss *strategyStore) DeleteStrategy(id string) error {
 			"delete auth_strategy missing some params, id is %s", id))
 	}
 
-	if err := ss.handler.DeleteValues(tblStrategy, []string{id}, true); err != nil {
+	properties := make(map[string]interface{})
+	properties[StrategyFieldValid] = false
+	properties[StrategyFieldModifyTime] = time.Now()
+
+	if err := ss.handler.UpdateValue(tblStrategy, id, properties); err != nil {
 		logger.StoreScope().Error("[Store][Strategy] delete auth_strategy", zap.Error(err), zap.String("id", id))
 		return err
 	}
@@ -339,7 +343,7 @@ func buildResMap(resources []model.StrategyResource) map[string][]model.Strategy
 }
 
 // GetStrategyDetail 获取策略详情
-func (ss *strategyStore) GetStrategyDetail(id string, isDefault bool) (*model.StrategyDetail, error) {
+func (ss *strategyStore) GetStrategyDetail(id string) (*model.StrategyDetail, error) {
 	proxy, err := ss.handler.StartTx()
 	if err != nil {
 		return nil, err
@@ -348,20 +352,16 @@ func (ss *strategyStore) GetStrategyDetail(id string, isDefault bool) (*model.St
 
 	defer tx.Rollback()
 
-	return ss.getStrategyDetail(tx, id, isDefault)
+	return ss.getStrategyDetail(tx, id)
 }
 
 // GetStrategyDetail
-func (ss *strategyStore) getStrategyDetail(tx *bolt.Tx, id string, isDefault bool) (*model.StrategyDetail, error) {
+func (ss *strategyStore) getStrategyDetail(tx *bolt.Tx, id string) (*model.StrategyDetail, error) {
 	ret, err := loadStrategyById(tx, id)
 	if err != nil {
 		return nil, err
 	}
 	if ret == nil {
-		return nil, nil
-	}
-
-	if isDefault && !ret.Default {
 		return nil, nil
 	}
 
@@ -790,7 +790,12 @@ func cleanLinkStrategy(tx *bolt.Tx, role model.PrincipalType, principalId, owner
 	}
 
 	for k := range values {
-		if err := deleteValues(tx, tblStrategy, []string{k}, true); err != nil {
+
+		properties := make(map[string]interface{})
+		properties[StrategyFieldValid] = false
+		properties[StrategyFieldModifyTime] = time.Now()
+
+		if err := updateValue(tx, tblStrategy, k, properties); err != nil {
 			logger.StoreScope().Error("[Store][Strategy] clean link auth_strategy", zap.Error(err),
 				zap.String("principal-id", principalId), zap.Any("principal-type", role))
 			return err

@@ -102,11 +102,10 @@ func sendAsyncCreateInstance(bc *Controller) error {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			future := bc.AsyncCreateInstance(&api.Instance{
+			future := bc.AsyncCreateInstance(utils.NewUUID(), &api.Instance{
 				Id:           utils.NewStringValue(fmt.Sprintf("%d", index)),
 				ServiceToken: utils.NewStringValue(fmt.Sprintf("%d", index)),
-			},
-				"", "")
+			}, true)
 			if err := future.Wait(); err != nil {
 				fmt.Printf("%+v\n", err)
 				ch <- err

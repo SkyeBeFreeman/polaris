@@ -1,6 +1,9 @@
 # Polaris: Service Discovery and Governance
 
 [![Build Status](https://github.com/polarismesh/polaris/actions/workflows/testing.yml/badge.svg)](https://github.com/PolarisMesh/polaris/actions/workflows/testing.yml)
+[![codecov.io](https://codecov.io/gh/polarismesh/polaris/branch/main/graph/badge.svg)](https://codecov.io/gh/polarismesh/polaris?branch=main)
+[![Contributors](https://img.shields.io/github/contributors/polarismesh/polaris)](https://github.com/polarismesh/polaris/graphs/contributors)
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 <img src="logo.svg" width="10%" height="10%" />
 
@@ -83,7 +86,7 @@ Point Script: ./store/sqldb/scripts/polaris_server.sql, one can import through m
 
 #### Prepare golang compile environment
 
-Polaris server end needs golang compile environment, version number needs >=1.12, download available
+Polaris server end needs golang compile environment, version number needs >=1.17, download available
 here: https://golang.org/dl/#featured.
 
 ### Build
@@ -164,7 +167,5 @@ Please scan the QR code to join the chat group.
 
 If you have good comments or suggestions, please give us Issues or Pull Requests to contribute to improve the
 development experience of Polaris Mesh.
-<br>see details：[CONTRIBUTING.md](./CONTRIBUTING.md)
 
-[Tencent Open Source Incentive Plan](https://opensource.tencent.com/contribution) encourages developers to participate
-and contribute. Look forward to your participation.
+<br>see details：[CONTRIBUTING.md](./CONTRIBUTING.md)

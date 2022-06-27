@@ -360,6 +360,15 @@ func ParseRequestID(ctx context.Context) string {
 	return rid
 }
 
+func ParseClientAddress(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	rid, _ := ctx.Value(ContextClientAddress).(string)
+	return rid
+}
+
+
 // ParseAuthToken 从ctx中获取token
 func ParseAuthToken(ctx context.Context) string {
 	if ctx == nil {
@@ -398,6 +407,16 @@ func ParseUserID(ctx context.Context) string {
 
 	userID, _ := ctx.Value(ContextUserIDKey).(string)
 	return userID
+}
+
+// ParseUserName 从ctx解析用户名称
+func ParseUserName(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+
+	userName, _ := ctx.Value(ContextUserNameKey).(string)
+	return userName
 }
 
 // ParseOwnerID 从ctx解析Owner ID

@@ -15,13 +15,16 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package cmd
+package utils
 
 import (
-	"github.com/polarismesh/polaris-server/plugin"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-// Config 启动配置
-type Config struct {
-	Plugin *plugin.Config
+func TestStringSliceDeDuplication(t *testing.T) {
+	s := []string{"1", "2", "", "_invalid", "1", "23"}
+	s2 := StringSliceDeDuplication(s)
+	assert.Equal(t, s2, []string{"1", "2", "", "_invalid", "23"})
 }
